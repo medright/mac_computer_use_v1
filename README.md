@@ -32,43 +32,51 @@ git clone https://github.com/deedy/mac_computer_use.git
 cd mac_computer_use
 ```
 
-2. Create and activate a virtual environment:
-
-```bash
-python3.12 -m venv venv
-source venv/bin/activate
-```
-
-3. Run the setup script:
+2. Run the setup script:
 
 ```bash
 chmod +x setup.sh
 ./setup.sh
 ```
 
-4. Install Python requirements:
-
-```bash
-pip install -r requirements.txt
-```
+This will:
+- Install system dependencies if needed (Homebrew, Python 3.12, cliclick)
+- Create and activate a Python virtual environment
+- Install all required Python packages
+- Create an activation script
 
 ## Running the Demo
 
 ### Set up your environment and Anthropic API key
 
-1. In a `.env` file add:
+1. Copy the sample environment file and configure your settings:
 
+```bash
+cp .sample.env .env
+```
+
+2. Edit the `.env` file with your settings. At minimum, you'll need:
+- Your Anthropic API key from [Anthropic Console](https://console.anthropic.com/settings/keys)
+- Desired screen dimensions (recommended: stay within XGA/WXGA resolution)
+
+Example minimal configuration:
 ```
 API_PROVIDER=anthropic
-ANTHROPIC_API_KEY=<key>
-WIDTH=800
-HEIGHT=600
+ANTHROPIC_API_KEY=your_key_here
+WIDTH=1280
+HEIGHT=800
 DISPLAY_NUM=1
 ```
 
-Set the screen dimensions (recommended: stay within XGA/WXGA resolution), and put in your key from [Anthropic Console](https://console.anthropic.com/settings/keys).
+For other API providers (Bedrock, Vertex), refer to the additional settings in `.sample.env`.
 
-2. Start the Streamlit app:
+3. Activate the environment:
+
+```bash
+source activate.sh
+```
+
+4. Start the Streamlit app:
 
 ```bash
 streamlit run streamlit.py
