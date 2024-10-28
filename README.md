@@ -2,9 +2,13 @@
 
 [Anthropic Computer Use](https://github.com/anthropics/anthropic-quickstarts/blob/main/computer-use-demo/README.md) is a beta Anthropic feature which runs a Docker image with Ubuntu and controls it. This fork allows you to run it natively on macOS, providing direct system control through native macOS commands and utilities.
 
-> [!CAUTION]
-> This comes with obvious risks. The Anthropic agent can control everything on your Mac. Please be careful.
-> Anthropic's new Claude 3.5 Sonnet model refuses to do unsafe things like purchase items or download illegal content.
+> [!WARNING]
+> **Security Considerations:**
+> - This tool requires extensive system permissions and can control your entire Mac
+> - Never share or commit your API keys
+> - Run this tool only in controlled environments
+> - Monitor system activity during use
+> - Review the [SECURITY.md](SECURITY.md) file for complete security guidelines
 
 ## Features
 
@@ -16,12 +20,29 @@
 - Automatic screen resolution scaling
 - File system interaction and editing capabilities
 
-## Prerequisites
+## System Requirements
 
 - macOS Sonoma 15.7 or later
 - Python 3.12+
 - Homebrew (for installing additional dependencies)
 - cliclick (`brew install cliclick`) - Required for mouse and keyboard control
+
+### Required Permissions
+- Screen Recording
+- Accessibility
+- Input Monitoring
+- Full Disk Access (for certain operations)
+
+To grant these permissions:
+1. Go to System Preferences > Security & Privacy > Privacy
+2. Enable permissions for your terminal application or IDE
+
+## Rate Limits
+
+- Anthropic API: Default 50 requests per minute
+- Screen capture: Maximum 1 capture per second
+- System commands: Throttled to prevent system overload
+- See [rate_limiter.py](tools/rate_limiter.py) for detailed limits
 
 ## Setup Instructions
 
@@ -102,3 +123,11 @@ streamlit run streamlit.py
 
 > [!IMPORTANT]
 > The Beta API used in this reference implementation is subject to change. Please refer to the [API release notes](https://docs.anthropic.com/en/release-notes/api) for the most up-to-date information.
+
+## Contributing
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+
+## Security
+
+For security-related matters, please review our [Security Policy](SECURITY.md).
