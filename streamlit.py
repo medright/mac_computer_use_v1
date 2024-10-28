@@ -99,7 +99,31 @@ async def main():
 
     st.markdown(STREAMLIT_STYLE, unsafe_allow_html=True)
 
-    st.title("Claude Computer Use for Mac")
+    # Create columns for the top bar
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+    
+    with col1:
+        st.title("Claude Computer Use for Mac")
+    
+    # Show token stats in the top bar if available
+    if hasattr(st.session_state, 'rate_limiter'):
+        stats = st.session_state.rate_limiter.get_usage_stats(st.session_state.model)
+        if stats:
+            with col2:
+                st.metric(
+                    "Requests/min", 
+                    f"{stats['requests_per_minute']['current']}/{stats['requests_per_minute']['limit']}"
+                )
+            with col3:
+                st.metric(
+                    "TPM",
+                    f"{stats['tokens_per_minute']['current']}/{stats['tokens_per_minute']['limit']}"
+                )
+            with col4:
+                st.metric(
+                    "Daily Tokens",
+                    f"{stats['tokens_per_day']['current']}/{stats['tokens_per_day']['limit']}"
+                )
 
     st.markdown("""This is from [Mac Computer Use](https://github.com/deedy/mac_computer_use), a fork of [Anthropic Computer Use](https://github.com/anthropics/anthropic-quickstarts/blob/main/computer-use-demo/README.md) to work natively on Mac.""")
 
@@ -156,28 +180,6 @@ async def main():
                 subprocess.run("./start_all.sh", shell=True)  # noqa: ASYNC221
 
         st.divider()
-        st.subheader("API Usage Stats")
-        if hasattr(st.session_state, 'rate_limiter'):
-            stats = st.session_state.rate_limiter.get_usage_stats(st.session_state.model)
-            if stats:
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric(
-                        "Requests/min", 
-                        f"{stats['requests_per_minute']['current']}/{stats['requests_per_minute']['limit']}"
-                    )
-                with col2:
-                    st.metric(
-                        "Tokens/min",
-                        f"{stats['tokens_per_minute']['current']}/{stats['tokens_per_minute']['limit']}"
-                    )
-                with col3:
-                    st.metric(
-                        "Daily Tokens",
-                        f"{stats['tokens_per_day']['current']}/{stats['tokens_per_day']['limit']}"
-                    )
-            else:
-                st.info("No usage data available yet")
 
     if not st.session_state.auth_validated:
         if auth_error := validate_auth(
