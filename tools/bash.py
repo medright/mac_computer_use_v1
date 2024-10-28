@@ -5,6 +5,7 @@ from typing import ClassVar, Literal
 from anthropic.types.beta import BetaToolBash20241022Param
 
 from .base import BaseAnthropicTool, CLIResult, ToolError, ToolResult
+from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 
 class _BashSession:
@@ -120,14 +121,16 @@ class BashTool(BaseAnthropicTool):
     async def __call__(
         self, command: str | None = None, restart: bool = False, **kwargs
     ):
+        # Add Streamlit context to this async function
+        add_script_run_ctx()
+        
         if restart:
             if self._session:
                 self._session.stop()
             self._session = _BashSession()
             await self._session.start()
-
+            
             return ToolResult(system="tool has been restarted.")
-
         if self._session is None:
             self._session = _BashSession()
             await self._session.start()

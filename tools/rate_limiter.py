@@ -6,6 +6,7 @@ import streamlit as st
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 from typing import Dict, Optional
+from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 @dataclass
 class RateLimit:
@@ -163,6 +164,9 @@ Rate limit check:
 
     async def wait_if_needed(self, model: str, token_count: int):
         """Wait until rate limits allow the request and show status in Streamlit UI"""
+        # Add Streamlit context to this async function
+        add_script_run_ctx()
+        
         while True:
             error = self.check_limits(model, token_count)
             if not error:
@@ -185,4 +189,4 @@ Current Usage:
                 
             # Show warning message in Streamlit
             st.warning(message, icon="⏳")
-            await asyncio.sleep(1)
+            await asyncio.sleep(15)

@@ -23,6 +23,11 @@ from anthropic.types.beta import (
 )
 
 from tools import BashTool, ComputerTool, EditTool, ToolCollection, ToolResult
+from tools.rate_limiter import RateLimiter
+import tiktoken
+import streamlit as st
+from streamlit.runtime.scriptrunner import add_script_run_ctx
+import asyncio
 
 BETA_FLAG = "computer-use-2024-10-22"
 
@@ -95,6 +100,33 @@ SYSTEM_PROMPT = f"""<SYSTEM_CAPABILITY>
 # * The current date is {datetime.today().strftime('%A, %B %-d, %Y')}.
 # </SYSTEM_CAPABILITY>"""
 
+# Add this function to estimate tokens
+def estimate_tokens(messages: list[BetaMessageParam], system: str) -> int:
+    """Estimate the number of tokens in the request"""
+    # Use cl100k_base encoding which Claude uses
+    enc = tiktoken.get_encoding("cl100k_base")
+    
+    total = len(enc.encode(system))
+    
+    for msg in messages:
+        if isinstance(msg["content"], str):
+            total += len(enc.encode(msg["content"]))
+        elif isinstance(msg["content"], list):
+            for block in msg["content"]:
+                if isinstance(block, dict):
+                    if block["type"] == "text":
+                        total += len(enc.encode(block["text"]))
+                    elif block["type"] == "tool_result":
+                        if isinstance(block["content"], str):
+                            total += len(enc.encode(block["content"]))
+                        elif isinstance(block["content"], list):
+                            for content in block["content"]:
+                                if content["type"] == "text":
+                                    total += len(enc.encode(content["text"]))
+    
+    return total
+
+# Update the sampling_loop function
 async def sampling_loop(
     *,
     model: str,
@@ -108,9 +140,17 @@ async def sampling_loop(
     only_n_most_recent_images: int | None = None,
     max_tokens: int = 4096,
 ):
+    # Add Streamlit context to this async function
+    add_script_run_ctx()
+    
     """
     Agentic sampling loop for the assistant/tool interaction of computer use.
     """
+    # Initialize rate limiter and store in session state
+    if 'rate_limiter' not in st.session_state:
+        st.session_state.rate_limiter = RateLimiter()
+    rate_limiter = st.session_state.rate_limiter
+    
     tool_collection = ToolCollection(
         ComputerTool(),
         BashTool(),
@@ -123,6 +163,12 @@ async def sampling_loop(
     while True:
         if only_n_most_recent_images:
             _maybe_filter_to_n_most_recent_images(messages, only_n_most_recent_images)
+
+        # Estimate tokens for this request
+        estimated_tokens = estimate_tokens(messages, system) + max_tokens
+        
+        # Wait for rate limits if needed
+        await rate_limiter.wait_if_needed(model, estimated_tokens)
 
         if provider == APIProvider.ANTHROPIC:
             client = Anthropic(api_key=api_key)
@@ -143,6 +189,9 @@ async def sampling_loop(
             tools=tool_collection.to_params(),
             betas=[BETA_FLAG],
         )
+
+        # Record the usage
+        rate_limiter.record_usage(model, estimated_tokens)
 
         api_response_callback(cast(APIResponse[BetaMessage], raw_response))
 
@@ -264,3 +313,20 @@ def _maybe_prepend_system_tool_result(result: ToolResult, result_text: str):
     if result.system:
         result_text = f"<system>{result.system}</system>\n{result_text}"
     return result_text
+
+
+# Add this near the top with other imports
+from streamlit.runtime.scriptrunner import add_script_run_ctx
+
+# Modify the wait_if_needed method to show messages
+async def wait_if_needed(self, model: str, token_count: int):
+    """Wait until rate limits allow the request and show status in Streamlit UI"""
+    while True:
+        error = self.check_limits(model, token_count)
+        if not error:
+            break
+            
+        # Show warning message in Streamlit
+        st.warning(f"Rate limit reached: {error}. Waiting...", icon="⏳")
+        await asyncio.sleep(1)
+
