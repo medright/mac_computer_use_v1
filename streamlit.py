@@ -28,6 +28,7 @@ from loop import (
 )
 from tools import ToolResult
 from dotenv import load_dotenv
+from tools.rate_limiter import RateLimiter  # Add this import
 
 load_dotenv()
 
@@ -79,6 +80,8 @@ def setup_state():
         st.session_state.responses = {}
     if "tools" not in st.session_state:
         st.session_state.tools = {}
+    if "rate_limiter" not in st.session_state:
+        st.session_state.rate_limiter = RateLimiter()  # Add this line
     if "only_n_most_recent_images" not in st.session_state:
         st.session_state.only_n_most_recent_images = 10
     if "custom_system_prompt" not in st.session_state:
@@ -99,7 +102,38 @@ async def main():
 
     st.markdown(STREAMLIT_STYLE, unsafe_allow_html=True)
 
-    st.title("Claude Computer Use for Mac")
+    # Create columns for the top bar
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+    
+    with col1:
+        st.title("Claude Computer Use for Mac")
+    
+    # Show token stats in the top bar if available
+    if hasattr(st.session_state, 'rate_limiter') and hasattr(st.session_state, 'model'):
+        stats = st.session_state.rate_limiter.get_usage_stats(st.session_state.model)
+        if stats:
+            with col2:
+                st.metric(
+                    "Requests/min", 
+                    f"{stats['requests_per_minute']['current']}/{stats['requests_per_minute']['limit']}",
+                    help="Number of API requests per minute"
+                )
+            with col3:
+                st.metric(
+                    "TPM",
+                    f"{stats['tokens_per_minute']['current']}/{stats['tokens_per_minute']['limit']}",
+                    delta=f"{stats['tokens_per_minute']['remaining']} remaining",
+                    help="Tokens per minute usage"
+                )
+            with col4:
+                daily_usage = (stats['tokens_per_day']['current'] / stats['tokens_per_day']['limit']) * 100
+                st.metric(
+                    "Daily Tokens",
+                    f"{stats['tokens_per_day']['current']:,}/{stats['tokens_per_day']['limit']:,}",
+                    delta=f"{daily_usage:.1f}% used",
+                    delta_color="inverse",
+                    help="Daily token usage and limit"
+                )
 
     st.markdown("""This is from [Mac Computer Use](https://github.com/deedy/mac_computer_use), a fork of [Anthropic Computer Use](https://github.com/anthropics/anthropic-quickstarts/blob/main/computer-use-demo/README.md) to work natively on Mac.""")
 
@@ -154,6 +188,8 @@ async def main():
                 subprocess.run("pkill Xvfb; pkill tint2", shell=True)  # noqa: ASYNC221
                 await asyncio.sleep(1)
                 subprocess.run("./start_all.sh", shell=True)  # noqa: ASYNC221
+
+        st.divider()
 
     if not st.session_state.auth_validated:
         if auth_error := validate_auth(
@@ -358,3 +394,5 @@ def _render_message(
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+

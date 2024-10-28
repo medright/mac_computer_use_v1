@@ -1,10 +1,14 @@
 # Anthropic Computer Use (for Mac)
 
-[Anthropic Computer Use](https://github.com/anthropics/anthropic-quickstarts/blob/main/computer-use-demo/README.md) is a beta Anthropic feature which runs a Docker image with Ubuntu and controls it. This fork allows you to run it natively on macOS, providing direct system control through native macOS commands and utilities.
+[Anthropic Computer Use](https://github.com/anthropics/anthropic-quickstarts/blob/main/computer-use-demo/README.md) is a beta Anthropic feature which runs a Streamlit app for user UI. This fork allows you to run it natively on macOS, providing direct system control through native macOS commands and utilities and is a fork of the implementation by [deedy](https://github.com/deedy/mac_computer_use).
 
-> [!CAUTION]
-> This comes with obvious risks. The Anthropic agent can control everything on your Mac. Please be careful.
-> Anthropic's new Claude 3.5 Sonnet model refuses to do unsafe things like purchase items or download illegal content.
+> [!WARNING]
+> **Security Considerations:**
+> - This tool requires extensive system permissions and can control your entire Mac
+> - Never share or commit your API keys
+> - Run this tool only in controlled environments
+> - Monitor system activity during use
+> - Review the [SECURITY.md](SECURITY.md) file for complete security guidelines
 
 ## Features
 
@@ -16,12 +20,29 @@
 - Automatic screen resolution scaling
 - File system interaction and editing capabilities
 
-## Prerequisites
+## System Requirements
 
 - macOS Sonoma 15.7 or later
 - Python 3.12+
 - Homebrew (for installing additional dependencies)
 - cliclick (`brew install cliclick`) - Required for mouse and keyboard control
+
+### Required Permissions
+- Screen Recording
+- Accessibility
+- Input Monitoring
+- Full Disk Access (for certain operations)
+
+To grant these permissions:
+1. Go to System Preferences > Security & Privacy > Privacy
+2. Enable permissions for your terminal application or IDE
+
+## Rate Limits
+
+- Anthropic API: Default 50 requests per minute
+- Screen capture: Maximum 1 capture per second
+- System commands: Throttled to prevent system overload
+- See [rate_limiter.py](tools/rate_limiter.py) for detailed limits
 
 ## Setup Instructions
 
@@ -32,43 +53,51 @@ git clone https://github.com/deedy/mac_computer_use.git
 cd mac_computer_use
 ```
 
-2. Create and activate a virtual environment:
-
-```bash
-python3.12 -m venv venv
-source venv/bin/activate
-```
-
-3. Run the setup script:
+2. Run the setup script:
 
 ```bash
 chmod +x setup.sh
 ./setup.sh
 ```
 
-4. Install Python requirements:
-
-```bash
-pip install -r requirements.txt
-```
+This will:
+- Install system dependencies if needed (Homebrew, Python 3.12, cliclick)
+- Create and activate a Python virtual environment
+- Install all required Python packages
+- Create an activation script
 
 ## Running the Demo
 
 ### Set up your environment and Anthropic API key
 
-1. In a `.env` file add:
+1. Copy the sample environment file and configure your settings:
 
+```bash
+cp .sample.env .env
+```
+
+2. Edit the `.env` file with your settings. At minimum, you'll need:
+- Your Anthropic API key from [Anthropic Console](https://console.anthropic.com/settings/keys)
+- Desired screen dimensions (recommended: stay within XGA/WXGA resolution)
+
+Example minimal configuration:
 ```
 API_PROVIDER=anthropic
-ANTHROPIC_API_KEY=<key>
-WIDTH=800
-HEIGHT=600
+ANTHROPIC_API_KEY=your_key_here
+WIDTH=1280
+HEIGHT=800
 DISPLAY_NUM=1
 ```
 
-Set the screen dimensions (recommended: stay within XGA/WXGA resolution), and put in your key from [Anthropic Console](https://console.anthropic.com/settings/keys).
+For other API providers (Bedrock, Vertex), refer to the additional settings in `.sample.env`.
 
-2. Start the Streamlit app:
+3. Activate the environment:
+
+```bash
+source activate.sh
+```
+
+4. Start the Streamlit app:
 
 ```bash
 streamlit run streamlit.py
@@ -94,3 +123,11 @@ streamlit run streamlit.py
 
 > [!IMPORTANT]
 > The Beta API used in this reference implementation is subject to change. Please refer to the [API release notes](https://docs.anthropic.com/en/release-notes/api) for the most up-to-date information.
+
+## Contributing
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+
+## Security
+
+For security-related matters, please review our [Security Policy](SECURITY.md).

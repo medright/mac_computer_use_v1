@@ -8,6 +8,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal, TypedDict
 from uuid import uuid4
+from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 from anthropic.types.beta import BetaToolComputerUse20241022Param
 
@@ -105,6 +106,9 @@ class ComputerTool(BaseAnthropicTool):
         coordinate: tuple[int, int] | None = None,
         **kwargs,
     ):
+        # Add Streamlit context to this async function
+        add_script_run_ctx()
+        
         print("Action: ", action, text, coordinate)
         if action in ("mouse_move", "left_click_drag"):
             if coordinate is None:
@@ -218,6 +222,9 @@ class ComputerTool(BaseAnthropicTool):
         raise ToolError(f"Invalid action: {action}")
 
     async def screenshot(self):
+        # Add Streamlit context to this async function
+        add_script_run_ctx()
+        
         """Take a screenshot of the current screen and return the base64 encoded image."""
         output_dir = Path(OUTPUT_DIR)
         output_dir.mkdir(parents=True, exist_ok=True)
