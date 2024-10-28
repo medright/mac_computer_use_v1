@@ -1,6 +1,6 @@
 # Anthropic Computer Use (for Mac)
 
-[Anthropic Computer Use](https://github.com/anthropics/anthropic-quickstarts/blob/main/computer-use-demo/README.md) is a beta Anthropic feature which runs a Docker image with Ubuntu and controls it. This fork allows you to run it natively on macOS, providing direct system control through native macOS commands and utilities.
+[Anthropic Computer Use](https://github.com/anthropics/anthropic-quickstarts/blob/main/computer-use-demo/README.md) is a beta Anthropic feature which runs a Streamlit app for user UI. This fork allows you to run it natively on macOS, providing direct system control through native macOS commands and utilities and is a fork of the implementation by [deedy](https://github.com/deedy/mac_computer_use).
 
 > [!WARNING]
 > **Security Considerations:**
