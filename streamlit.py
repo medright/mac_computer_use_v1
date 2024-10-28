@@ -155,6 +155,30 @@ async def main():
                 await asyncio.sleep(1)
                 subprocess.run("./start_all.sh", shell=True)  # noqa: ASYNC221
 
+        st.divider()
+        st.subheader("API Usage Stats")
+        if hasattr(st.session_state, 'rate_limiter'):
+            stats = st.session_state.rate_limiter.get_usage_stats(st.session_state.model)
+            if stats:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric(
+                        "Requests/min", 
+                        f"{stats['requests_per_minute']['current']}/{stats['requests_per_minute']['limit']}"
+                    )
+                with col2:
+                    st.metric(
+                        "Tokens/min",
+                        f"{stats['tokens_per_minute']['current']}/{stats['tokens_per_minute']['limit']}"
+                    )
+                with col3:
+                    st.metric(
+                        "Daily Tokens",
+                        f"{stats['tokens_per_day']['current']}/{stats['tokens_per_day']['limit']}"
+                    )
+            else:
+                st.info("No usage data available yet")
+
     if not st.session_state.auth_validated:
         if auth_error := validate_auth(
             st.session_state.provider, st.session_state.api_key
@@ -358,3 +382,4 @@ def _render_message(
 
 if __name__ == "__main__":
     asyncio.run(main())
+
