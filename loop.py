@@ -28,6 +28,8 @@ import tiktoken
 import streamlit as st
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 import asyncio
+import json
+from pathlib import Path
 
 BETA_FLAG = "computer-use-2024-10-22"
 
@@ -126,6 +128,24 @@ def estimate_tokens(messages: list[BetaMessageParam], system: str) -> int:
     
     return total
 
+# Add this function near the top with other helper functions
+def serialize_message_content(content):
+    """Convert message content to JSON-serializable format"""
+    if isinstance(content, str):
+        return content
+    elif isinstance(content, list):
+        return [
+            {
+                "type": block["type"],
+                "text": block["text"] if block["type"] == "text" else None,
+                "content": block["content"] if block["type"] == "tool_result" else None,
+                "tool_use_id": block.get("tool_use_id"),
+                "is_error": block.get("is_error", False)
+            }
+            for block in content if isinstance(block, dict)
+        ]
+    return str(content)  # Fallback for unknown types
+
 # Update the sampling_loop function
 async def sampling_loop(
     *,
@@ -146,9 +166,7 @@ async def sampling_loop(
     """
     Agentic sampling loop for the assistant/tool interaction of computer use.
     """
-    # Initialize rate limiter and store in session state
-    if 'rate_limiter' not in st.session_state:
-        st.session_state.rate_limiter = RateLimiter()
+    # Use the existing rate limiter from session state
     rate_limiter = st.session_state.rate_limiter
     
     tool_collection = ToolCollection(
@@ -161,67 +179,126 @@ async def sampling_loop(
     )
 
     while True:
-        if only_n_most_recent_images:
-            _maybe_filter_to_n_most_recent_images(messages, only_n_most_recent_images)
+        try:
+            if only_n_most_recent_images:
+                _maybe_filter_to_n_most_recent_images(messages, only_n_most_recent_images)
 
-        # Estimate tokens for this request
-        estimated_tokens = estimate_tokens(messages, system) + max_tokens
-        
-        # Wait for rate limits if needed
-        await rate_limiter.wait_if_needed(model, estimated_tokens)
+            # Estimate input tokens (system prompt + messages)
+            input_tokens = estimate_tokens(messages, system)
+            
+            # Wait for rate limits if needed
+            await rate_limiter.wait_if_needed(model, input_tokens)
 
-        if provider == APIProvider.ANTHROPIC:
-            client = Anthropic(api_key=api_key)
-        elif provider == APIProvider.VERTEX:
-            client = AnthropicVertex()
-        elif provider == APIProvider.BEDROCK:
-            client = AnthropicBedrock()
+            if provider == APIProvider.ANTHROPIC:
+                client = Anthropic(
+                    api_key=api_key,
+                    base_url="https://api.anthropic.com",
+                    timeout=60.0,
+                )
+            elif provider == APIProvider.VERTEX:
+                client = AnthropicVertex()
+            elif provider == APIProvider.BEDROCK:
+                client = AnthropicBedrock()
 
-        # Call the API
-        # we use raw_response to provide debug information to streamlit. Your
-        # implementation may be able call the SDK directly with:
-        # `response = client.messages.create(...)` instead.
-        raw_response = client.beta.messages.with_raw_response.create(
-            max_tokens=max_tokens,
-            messages=messages,
-            model=model,
-            system=system,
-            tools=tool_collection.to_params(),
-            betas=[BETA_FLAG],
-        )
+            # Call the API
+            raw_response = client.beta.messages.with_raw_response.create(
+                max_tokens=max_tokens,
+                messages=messages,
+                model=model,
+                system=system,
+                tools=tool_collection.to_params(),
+                betas=[BETA_FLAG],
+            )
 
-        # Record the usage
-        rate_limiter.record_usage(model, estimated_tokens)
+            response = raw_response.parse()
+            
+            # Get actual output tokens from response
+            output_tokens = response.usage.output_tokens if hasattr(response, 'usage') else max_tokens
+            
+            # Record the usage with actual token counts
+            rate_limiter.record_usage(
+                model, 
+                input_tokens=input_tokens,
+                output_tokens=output_tokens
+            )
 
-        api_response_callback(cast(APIResponse[BetaMessage], raw_response))
+            api_response_callback(cast(APIResponse[BetaMessage], raw_response))
 
-        response = raw_response.parse()
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": cast(list[BetaContentBlockParam], response.content),
+                }
+            )
 
-        messages.append(
-            {
-                "role": "assistant",
-                "content": cast(list[BetaContentBlockParam], response.content),
+            # Save conversation history with serialized content
+            conversation_history = {
+                "timestamp": datetime.now().isoformat(),
+                "messages": [
+                    {
+                        "role": msg["role"],
+                        "content": serialize_message_content(msg["content"])
+                    }
+                    for msg in messages[:-1]  # Exclude the last message if it's from assistant
+                ]
             }
-        )
+            
+            with open('conversation_history.json', 'w') as f:
+                json.dump([conversation_history], f, indent=2)
 
-        tool_result_content: list[BetaToolResultBlockParam] = []
-        for content_block in cast(list[BetaContentBlock], response.content):
-            print("CONTENT", content_block)
-            output_callback(content_block)
-            if content_block.type == "tool_use":
-                result = await tool_collection.run(
-                    name=content_block.name,
-                    tool_input=cast(dict[str, Any], content_block.input),
-                )
-                tool_result_content.append(
-                    _make_api_tool_result(result, content_block.id)
-                )
-                tool_output_callback(result, content_block.id)
+            tool_result_content: list[BetaToolResultBlockParam] = []
+            for content_block in cast(list[BetaContentBlock], response.content):
+                print("CONTENT", content_block)
+                output_callback(content_block)
+                if content_block.type == "tool_use":
+                    result = await tool_collection.run(
+                        name=content_block.name,
+                        tool_input=cast(dict[str, Any], content_block.input),
+                    )
+                    tool_result_content.append(
+                        _make_api_tool_result(result, content_block.id)
+                    )
+                    tool_output_callback(result, content_block.id)
 
-        if not tool_result_content:
-            return messages
+            if not tool_result_content:
+                # Save final conversation state before returning
+                conversation_history = {
+                    "timestamp": datetime.now().isoformat(),
+                    "messages": [
+                        {
+                            "role": msg["role"],
+                            "content": serialize_message_content(msg["content"])
+                        }
+                        for msg in messages
+                    ]
+                }
+                
+                with open('conversation_history.json', 'w') as f:
+                    json.dump([conversation_history], f, indent=2)
+                return messages
 
-        messages.append({"content": tool_result_content, "role": "user"})
+            messages.append({"content": tool_result_content, "role": "user"})
+            
+            # Save conversation history after tool results
+            conversation_history = {
+                "timestamp": datetime.now().isoformat(),
+                "messages": [
+                    {
+                        "role": msg["role"],
+                        "content": serialize_message_content(msg["content"])
+                    }
+                    for msg in messages[:-1]  # Exclude the last message if it's from assistant
+                ]
+            }
+            
+            with open('conversation_history.json', 'w') as f:
+                json.dump([conversation_history], f, indent=2)
+            
+        except Exception as e:
+            error_message = f"API Error: {str(e)}\n\nRetrying in 5 seconds..."
+            st.error(error_message)
+            await asyncio.sleep(5)
+            continue
 
 
 def _maybe_filter_to_n_most_recent_images(
