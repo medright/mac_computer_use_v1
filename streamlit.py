@@ -13,9 +13,10 @@ from pathlib import PosixPath
 from typing import cast
 
 import streamlit as st
-from anthropic import APIResponse
+from anthropic import APIResponse, Anthropic
 from anthropic.types import (
     TextBlock,
+    Model,
 )
 from anthropic.types.beta import BetaMessage, BetaTextBlock, BetaToolUseBlock
 from anthropic.types.tool_use_block import ToolUseBlock
@@ -45,6 +46,17 @@ STREAMLIT_STYLE = """
      /* Hide the streamlit deploy button */
     .stDeployButton {
         visibility: hidden;
+    }
+    /* Style for token usage stats */
+    .token-stats {
+        position: fixed;
+        top: 0;
+        right: 16px;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 8px 16px;
+        border-radius: 0 0 4px 4px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        z-index: 1000;
     }
 </style>
 """
@@ -80,8 +92,17 @@ def setup_state():
         st.session_state.responses = {}
     if "tools" not in st.session_state:
         st.session_state.tools = {}
+    if "selected_tier" not in st.session_state:
+        st.session_state.selected_tier = load_from_storage("selected_tier") or "Tier 1 (Starter)"
     if "rate_limiter" not in st.session_state:
-        st.session_state.rate_limiter = RateLimiter()  # Add this line
+        tier_options = {
+            "Tier 1 (Starter)": 1,
+            "Tier 2 (Scale)": 2,
+            "Tier 3 (Growth)": 3,
+            "Tier 4 (Enterprise)": 4
+        }
+        os.environ['ANTHROPIC_TIER'] = str(tier_options[st.session_state.selected_tier])
+        st.session_state.rate_limiter = RateLimiter()
     if "only_n_most_recent_images" not in st.session_state:
         st.session_state.only_n_most_recent_images = 10
     if "custom_system_prompt" not in st.session_state:
@@ -103,10 +124,12 @@ async def main():
     st.markdown(STREAMLIT_STYLE, unsafe_allow_html=True)
 
     # Create columns for the top bar
-    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+    col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 1])
     
     with col1:
+        # Update the main area display
         st.title("Claude Computer Use for Mac")
+        # Remove the tier info and limits expander from here
     
     # Show token stats in the top bar if available
     if hasattr(st.session_state, 'rate_limiter') and hasattr(st.session_state, 'model'):
@@ -128,11 +151,30 @@ async def main():
             with col4:
                 daily_usage = (stats['tokens_per_day']['current'] / stats['tokens_per_day']['limit']) * 100
                 st.metric(
-                    "Daily Tokens",
-                    f"{stats['tokens_per_day']['current']:,}/{stats['tokens_per_day']['limit']:,}",
-                    delta=f"{daily_usage:.1f}% used",
-                    delta_color="inverse",
-                    help="Daily token usage and limit"
+                    "Daily %",
+                    f"{daily_usage:.1f}%",
+                    help=f"Daily usage: {stats['tokens_per_day']['current']:,}/{stats['tokens_per_day']['limit']:,} tokens"
+                )
+            with col5:
+                # Get total tokens from the stats
+                daily_stats = stats['tokens_per_day']
+                daily_input = daily_stats['input']
+                daily_output = daily_stats['output']
+                
+                # Calculate cost based on current pricing
+                input_cost = (daily_input / 1_000_000) * 3.00  # $3.00 per million input tokens
+                output_cost = (daily_output / 1_000_000) * 15.00  # $15.00 per million output tokens
+                total_cost = input_cost + output_cost
+                
+                st.metric(
+                    "Cost",
+                    f"${total_cost:.2f}",
+                    help=(
+                        f"Daily cost breakdown:\n"
+                        f"Input: ${input_cost:.2f} ({daily_input:,} tokens)\n"
+                        f"Output: ${output_cost:.2f} ({daily_output:,} tokens)\n"
+                        f"Based on $3.00/MTok input, $15.00/MTok output"
+                    )
                 )
 
     st.markdown("""This is from [Mac Computer Use](https://github.com/deedy/mac_computer_use), a fork of [Anthropic Computer Use](https://github.com/anthropics/anthropic-quickstarts/blob/main/computer-use-demo/README.md) to work natively on Mac.""")
@@ -154,7 +196,74 @@ async def main():
             on_change=_reset_api_provider,
         )
 
-        st.text_input("Model", key="model")
+        # Function to get available models
+        def get_available_models():
+            if st.session_state.provider != APIProvider.ANTHROPIC or not st.session_state.api_key:
+                return [PROVIDER_TO_DEFAULT_MODEL_NAME[st.session_state.provider]]
+                
+            # Static list of available Claude models that support computer use
+            computer_models = [
+                "claude-3-opus-20240229",
+                "claude-3-sonnet-20240229",
+                "claude-3-haiku-20240307",
+                "claude-3-5-sonnet-20241022",
+                "claude-3-5-sonnet-20240620"
+            ]
+            
+            try:
+                # Sort models to show newest first (based on date in model name)
+                sorted_models = sorted(computer_models, 
+                    key=lambda x: datetime.strptime(x.split('-')[-1], '%Y%m%d'),
+                    reverse=True
+                )
+                return sorted_models
+            except Exception as e:
+                st.sidebar.warning(f"Error sorting models: {str(e)}")
+                return computer_models
+
+        # Get available models
+        available_models = get_available_models()
+        
+        # Model selection dropdown
+        selected_model = st.selectbox(
+            "Model",
+            options=available_models,
+            index=available_models.index(st.session_state.model) if st.session_state.model in available_models else 0,
+            help="Select the model to use for computer control.\nNewest models are listed first."
+        )
+        
+        # Update session state when model changes
+        if selected_model != st.session_state.model:
+            st.session_state.model = selected_model
+            st.session_state.auth_validated = False
+
+        # Add tier selection dropdown
+        tier_options = {
+            "Tier 1 (Starter)": 1,
+            "Tier 2 (Scale)": 2,
+            "Tier 3 (Growth)": 3,
+            "Tier 4 (Enterprise)": 4
+        }
+        
+        # Store previous tier for comparison
+        previous_tier = st.session_state.selected_tier
+        
+        selected_tier = st.selectbox(
+            "API Tier",
+            options=list(tier_options.keys()),
+            key="selected_tier",
+            index=list(tier_options.keys()).index(st.session_state.selected_tier),
+            help="Select your Anthropic API tier level"
+        )
+        
+        # Check if tier changed
+        if selected_tier != previous_tier:
+            # Update stored tier
+            save_to_storage("selected_tier", selected_tier)
+            # Update environment variable
+            os.environ['ANTHROPIC_TIER'] = str(tier_options[selected_tier])
+            # Reinitialize rate limiter with new tier
+            st.session_state.rate_limiter = RateLimiter()
 
         if st.session_state.provider == APIProvider.ANTHROPIC:
             st.text_input(
@@ -163,6 +272,11 @@ async def main():
                 key="api_key",
                 on_change=lambda: save_to_storage("api_key", st.session_state.api_key),
             )
+
+        # Add tier limits expander in sidebar
+        with st.expander("View Tier Limits"):
+            if 'rate_limiter' in st.session_state and 'model' in st.session_state:
+                st.text(st.session_state.rate_limiter.get_tier_limits())
 
         st.number_input(
             "Only send N most recent images",
